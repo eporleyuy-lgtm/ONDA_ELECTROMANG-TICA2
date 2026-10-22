@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ondas electromagnéticas</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f8fafc;--fg:#0f172a;--card:#ffffff;--bd:#cbd5e1;--ac:#2563eb;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f172a;--fg:#e2e8f0;--card:#1e293b;--bd:#334155;--ac:#60a5fa;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f172a;--fg:#e2e8f0;--card:#1e293b;--bd:#334155;--ac:#60a5fa;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:900px;margin:0 auto;padding:12px}
+h1{font-size:1.15rem;margin:4px 0 10px}
+canvas{display:block;width:100%;border-radius:10px;border:1px solid var(--bd);touch-action:none;cursor:grab}
+.panel{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:10px;padding:10px 12px;background:var(--card);border:1px solid var(--bd);border-radius:10px;align-items:center}
+.panel label{display:flex;align-items:center;gap:6px}
+.panel input[type=range]{width:150px;accent-color:var(--ac)}
+button{font:inherit;padding:6px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--fg);cursor:pointer}
+button:hover{border-color:var(--ac)}
+.grp{display:flex;gap:12px;align-items:center}
+.sep{border-left:1px solid var(--bd);height:24px}
+</style>
+</head>
+<body>
+<main>
+<h1>Ondas electromagnéticas: carga acelerada en una antena</h1>
+<canvas id="cv"></canvas>
+<div class="panel">
+ <div class="grp">
+  <label><input type="radio" name="modo" value="manual" checked> Manual (arrastrá la carga)</label>
+  <label><input type="radio" name="modo" value="osc"> Oscilador</label>
+ </div>
+ <span class="sep"></span>
+ <label>Frecuencia <input id="fq" type="range" min="0.2" max="1.2" step="0.01" value="0.5"></label>
+ <label>Amplitud <input id="am" type="range" min="10" max="65" step="1" value="40"></label>
+ <span class="sep"></span>
+ <label><input id="vE" type="checkbox" checked> Campo eléctrico</label>
+ <label><input id="vB" type="checkbox" checked> Campo magnético</label>
+ <span class="sep"></span>
+ <button id="bP">Pulso</button>
+ <button id="bPa">Pausa</button>
+ <button id="bR">Reiniciar</button>
+</div>
+</main>
+<script>
+(function(){
+var W=800,H=480,AX=50,AY=240,C=120,DT=1/120,N=1400,L=75,E0=1.5e-4;
+var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+var P=new Float64Array(N),V=new Float64Array(N),A=new Float64Array(N);
+var n=0,p=0,ph=0,ampCur=40,target=0,mode='manual',pulseT=-1,paused=false,dragging=false;
+function $(i){return document.getElementById(i)}
+function resize(){
+ var w=cv.parentElement.clientWidth,d=window.devicePixelRatio||1;
+ cv.style.height=(w*H/W)+'px';cv.width=Math.round(w*d);cv.height=Math.round(w*H/W*d);
+}
+window.addEventListener('resize',resize);resize();
+
+function step(){
+ var f=parseFloat($('fq').value),am=parseFloat($('am').value),pn;
+ ampCur+=(am-ampCur)*0.05;
+ if(pulseT>=0){
+  pulseT+=DT;
+  if(pulseT>=1/f){pulseT=-1;pn=0;target=0;p=0}
+  else pn=ampCur*Math.sin(2*Math.PI*f*pulseT);
+  if(pulseT>=0)p=pn;
+ }else if(mode==='osc'){
+  ph+=2*Math.PI*f*DT;p=ampCur*Math.sin(ph);
+ }else{
+  p+=(target-p)*0.3;
+ }
+ var i=n%N,j=(n-1+N)%N,pr=P[j],vr=V[j];
+ n++;i=n%N;
+ P[i]=p;V[i]=(p-pr)/DT;A[i]=(V[i]-vr)/DT;
+}
+var R={p:0,v:0,a:0};
+function ret(r){
+ var s=n-r/(C*DT);
+ if(s<0||n-s>=N-2){R.p=R.v=R.a=0;return}
+ var i0=Math.floor(s),fr=s-i0,a=i0%N,b=(i0+1)%N;
+ R.p=P[a]+(P[b]-P[a])*fr;R.v=V[a]+(V[b]-V[a])*fr;R.a=A[a]+(A[b]-A[a])*fr;
+}
+function arrow(x1,y1,x2,y2){
+ var dx=x2-x1,dy=y2-y1,l=Math.hypot(dx,dy),h=Math.min(7,l*0.5),ux=dx/l,uy=dy/l;
+ ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(x2,y2);
+ ctx.lineTo(x2-h*ux+h*0.5*uy,y2-h*uy-h*0.5*ux);
+ ctx.lineTo(x2-h*ux-h*0.5*uy,y2-h*uy+h*0.5*ux);ctx.closePath();ctx.fill();
+}
+function draw(){
+ var s=cv.width/W;ctx.setTransform(s,0,0,s,0,0);
+ ctx.fillStyle='#0b1220';ctx.fillRect(0,0,W,H);
+ var showE=$('vE').checked,showB=$('vB').checked,x,y,dx,dy,r,rx,ry,pr,Ex,Ey,Bz,m,len;
+ if(showE){
+  ctx.strokeStyle=ctx.fillStyle='#fbbf24';ctx.lineWidth=1.8;
+  for(x=20;x<W;x+=40)for(y=20;y<H;y+=40){
+   dx=x-AX;dy=AY-y;r=Math.hypot(dx,dy);if(r<30)continue;
+   ret(r);rx=dx/r;ry=dy/r;pr=ry;
+   var k3=3*pr;
+   Ex=-R.a*(-rx*pr)/(C*C*r)+k3*rx*R.p/(r*r*r)+k3*rx*R.v/(C*r*r);
+   Ey=-R.a*(1-ry*pr)/(C*C*r)+(k3*ry-1)*R.p/(r*r*r)+(k3*ry-1)*R.v/(C*r*r);
+   m=Math.hypot(Ex,Ey);len=34*Math.tanh(m/E0);if(len<2)continue;
+   var ux=Ex/m,uy=-Ey/m;
+   arrow(x-ux*len/2,y-uy*len/2,x+ux*len/2,y+uy*len/2);
+  }
+ }
+ if(showB){
+  ctx.strokeStyle='#60a5fa';ctx.fillStyle='#60a5fa';ctx.lineWidth=1.6;
+  for(x=40;x<W;x+=40)for(y=40;y<H;y+=40){
+   dx=x-AX;dy=AY-y;r=Math.hypot(dx,dy);if(r<30)continue;
+   ret(r);rx=dx/r;
+   Bz=-rx*(R.a/(C*C*r)+R.v/(C*r*r));
+   var rad=10*Math.tanh(Math.abs(Bz)/E0);if(rad<2)continue;
+   ctx.beginPath();ctx.arc(x,y,rad,0,6.2832);ctx.stroke();
+   if(Bz>0){ctx.beginPath();ctx.arc(x,y,rad*0.3,0,6.2832);ctx.fill()}
+   else{var q=rad*0.6;ctx.beginPath();ctx.moveTo(x-q,y-q);ctx.lineTo(x+q,y+q);ctx.moveTo(x-q,y+q);ctx.lineTo(x+q,y-q);ctx.stroke()}
+  }
+ }
+ // antena y oscilador
+ ctx.strokeStyle='#94a3b8';ctx.lineWidth=6;ctx.lineCap='round';
+ ctx.beginPath();ctx.moveTo(AX,AY-L);ctx.lineTo(AX,AY+L+20);ctx.stroke();
+ ctx.lineWidth=2;ctx.beginPath();ctx.arc(AX,AY+L+36,16,0,6.2832);ctx.fillStyle='#0b1220';ctx.fill();ctx.stroke();
+ ctx.fillStyle='#94a3b8';ctx.font='20px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+ ctx.fillText('∿',AX,AY+L+36);
+ // carga
+ ctx.beginPath();ctx.arc(AX,AY-p,9,0,6.2832);ctx.fillStyle='#38bdf8';ctx.fill();
+ ctx.fillStyle='#0b1220';ctx.font='bold 15px system-ui';ctx.fillText('−',AX,AY-p);
+ // leyenda
+ ctx.textAlign='left';ctx.font='13px system-ui';ctx.fillStyle='#e2e8f0';
+ ctx.strokeStyle=ctx.fillStyle='#fbbf24';ctx.lineWidth=1.8;arrow(W-190,H-52,W-166,H-52);
+ ctx.fillStyle='#e2e8f0';ctx.fillText('Campo eléctrico E',W-158,H-52);
+ ctx.fillStyle='#60a5fa';ctx.fillText('⊙ B sale   ⊗ B entra',W-190,H-30);
+ ctx.strokeStyle=ctx.fillStyle='#e2e8f0';arrow(W-190,H-10,W-150,H-10);ctx.fillText('c',W-142,H-10);
+}
+var last=performance.now(),acc=0;
+function loop(t){
+ var d=Math.min(0.1,(t-last)/1000);last=t;
+ if(!paused){acc+=d;while(acc>=DT){step();acc-=DT}}
+ draw();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function setTarget(e){
+ var b=cv.getBoundingClientRect(),y=(e.clientY-b.top)*H/b.height;
+ target=Math.max(-L+10,Math.min(L-10,AY-y));
+}
+cv.addEventListener('pointerdown',function(e){
+ if(mode!=='manual'||pulseT>=0)return;
+ dragging=true;cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing';setTarget(e);
+});
+cv.addEventListener('pointermove',function(e){if(dragging)setTarget(e)});
+cv.addEventListener('pointerup',function(){dragging=false;cv.style.cursor='grab'});
+cv.addEventListener('pointercancel',function(){dragging=false;cv.style.cursor='grab'});
+
+var radios=document.getElementsByName('modo');
+for(var i=0;i<radios.length;i++)radios[i].addEventListener('change',function(){
+ mode=this.value;
+ if(mode==='osc'){ph=Math.asin(Math.max(-1,Math.min(1,p/Math.max(ampCur,1))))}
+ else target=p;
+});
+$('bP').onclick=function(){
+ if(pulseT>=0)return;
+ mode='manual';radios[0].checked=true;p=0;target=0;pulseT=0;
+};
+$('bPa').onclick=function(){paused=!paused;this.textContent=paused?'Continuar':'Pausa'};
+$('bR').onclick=function(){
+ P.fill(0);V.fill(0);A.fill(0);p=0;target=0;ph=0;pulseT=-1;
+};
+})();
+</script>
+</body>
+</html>
